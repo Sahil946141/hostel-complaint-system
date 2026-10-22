@@ -1,9 +1,6 @@
 pipeline {
     agent any
 
-    // ──────────────────────────────────────────
-    // PARAMETERS (Task 7 - parameterize env)
-    // ──────────────────────────────────────────
     parameters {
         choice(
             name: 'ENVIRONMENT',
@@ -12,64 +9,56 @@ pipeline {
         )
         string(
             name: 'DOCKER_IMAGE_TAG',
-            defaultValue: 'latest',
-            description: 'Docker image tag (e.g. v1.0.0, latest)'
+            defaultValue: "${env.BUILD_NUMBER ?: 'latest'}",
+            description: 'Docker image tag (e.g. v1.0.0, latest, build number)'
         )
         booleanParam(
             name: 'SKIP_TESTS',
             defaultValue: false,
-            description: 'Skip test execution'
+            description: 'Skip Selenium test execution (use only in emergency)'
         )
     }
 
-    // ──────────────────────────────────────────
-    // ENVIRONMENT VARIABLES
-    // ──────────────────────────────────────────
     environment {
         MAVEN_HOME      = 'E:\\Devops_23102A0008\\tools\\apache-maven-3.9.6'
         JAVA_HOME       = 'C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.12.8-hotspot'
         PATH            = "${MAVEN_HOME}\\bin;${JAVA_HOME}\\bin;${env.PATH}"
         APP_NAME        = 'hostel-complaint-system'
-        DOCKER_HUB_REPO = 'hostelcms'                  // change to your Docker Hub username
+        DOCKER_HUB_REPO = 'hostelcms'
         IMAGE_NAME      = "${DOCKER_HUB_REPO}/${APP_NAME}"
-        DOCKER_TAG      = "${params.DOCKER_IMAGE_TAG}"
+        DOCKER_TAG      = "${params.DOCKER_IMAGE_TAG ?: env.BUILD_NUMBER}"
     }
 
-    // ──────────────────────────────────────────
-    // STAGES
-    // ──────────────────────────────────────────
     stages {
 
-        // STAGE 1: Checkout
         stage('Checkout') {
             steps {
-                echo "==> Checking out source code..."
+                echo "==> [STAGE 1] Checking out source code..."
                 checkout scm
-                echo "Branch: ${env.GIT_BRANCH}"
-                echo "Commit: ${env.GIT_COMMIT}"
+                echo "Branch  : ${env.GIT_BRANCH}"
+                echo "Commit  : ${env.GIT_COMMIT}"
+                echo "Build # : ${env.BUILD_NUMBER}"
             }
         }
 
-        // STAGE 2: Build
         stage('Build') {
             steps {
-                echo "==> Building Spring Boot application..."
+                echo "==> [STAGE 2] Compiling Spring Boot application..."
                 dir('backend') {
-                    bat 'mvn clean compile -q'
+                    bat "mvn clean compile -q"
                 }
-                echo "==> Build SUCCESS"
+                echo "==> Compile SUCCESS"
             }
         }
 
-        // STAGE 3: Test (can be skipped via parameter)
-        stage('Test') {
+        stage('Unit Test') {
             when {
                 expression { return !params.SKIP_TESTS }
             }
             steps {
-                echo "==> Running unit tests..."
+                echo "==> [STAGE 3] Running unit tests..."
                 dir('backend') {
-                    bat 'mvn test'
+                    bat "mvn test"
                 }
             }
             post {
@@ -78,46 +67,68 @@ pipeline {
                           testResults: 'backend/target/surefire-reports/*.xml'
                 }
                 failure {
-                    echo "==> Tests FAILED! Stopping pipeline."
-                    error("Tests failed. Deployment blocked.")
+                    echo "==> UNIT TESTS FAILED! Blocking deployment."
+                    error("Unit tests failed. Fix before deploying.")
                 }
             }
         }
 
-        // STAGE 4: Package
         stage('Package') {
             steps {
-                echo "==> Packaging application as JAR..."
+                echo "==> [STAGE 4] Packaging as JAR artifact..."
                 dir('backend') {
-                    bat 'mvn package -DskipTests -q'
+                    bat "mvn package -DskipTests -q"
                 }
-                echo "==> Artifact created: backend/target/complaint-system-1.0.0.jar"
+                echo "==> Artifact: backend/target/complaint-system-1.0.0.jar"
             }
             post {
                 success {
                     archiveArtifacts artifacts: 'backend/target/*.jar',
                                      fingerprint: true,
                                      allowEmptyArchive: false
+                    echo "==> Artifact archived successfully"
                 }
             }
         }
 
-        // STAGE 5: Docker Build
+        stage('Selenium Tests') {
+            when {
+                expression { return !params.SKIP_TESTS }
+            }
+            steps {
+                echo "==> [STAGE 5] Running Selenium UI tests..."
+                dir('tests') {
+                    bat "mvn test -Dapp.url=http://localhost:3000"
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true,
+                          testResults: 'tests/target/surefire-reports/*.xml'
+                    archiveArtifacts artifacts: 'tests/test-screenshots/**/*.png',
+                                     allowEmptyArchive: true
+                }
+                failure {
+                    echo "==> SELENIUM TESTS FAILED! Blocking Docker deployment."
+                    error("Selenium tests failed. Fix the defect and recommit.")
+                }
+            }
+        }
+
         stage('Docker Build') {
             steps {
-                echo "==> Building Docker image: ${IMAGE_NAME}:${DOCKER_TAG}"
+                echo "==> [STAGE 6] Building Docker image ${IMAGE_NAME}:${DOCKER_TAG}..."
                 dir('backend') {
                     bat "docker build -t ${IMAGE_NAME}:${DOCKER_TAG} ."
                     bat "docker tag ${IMAGE_NAME}:${DOCKER_TAG} ${IMAGE_NAME}:latest"
                 }
-                echo "==> Docker image built successfully"
+                echo "==> Docker image built: ${IMAGE_NAME}:${DOCKER_TAG}"
             }
         }
 
-        // STAGE 6: Docker Push (to Docker Hub)
         stage('Docker Push') {
             steps {
-                echo "==> Pushing image to Docker Hub..."
+                echo "==> [STAGE 7] Pushing to Docker Hub..."
                 withCredentials([usernamePassword(
                     credentialsId: 'docker-hub-credentials',
                     usernameVariable: 'DOCKER_USER',
@@ -126,36 +137,41 @@ pipeline {
                     bat "docker login -u %DOCKER_USER% -p %DOCKER_PASS%"
                     bat "docker push ${IMAGE_NAME}:${DOCKER_TAG}"
                     bat "docker push ${IMAGE_NAME}:latest"
+                    bat "docker logout"
                 }
+                echo "==> Image pushed to registry"
             }
         }
 
-        // STAGE 7: Deploy
-        stage('Deploy') {
+        stage('Deploy Container') {
             steps {
-                echo "==> Deploying to ${params.ENVIRONMENT} environment..."
+                echo "==> [STAGE 8] Deploying to ${params.ENVIRONMENT}..."
                 bat """
-                    docker-compose down || echo "No running containers"
-                    docker-compose up -d --build
-                    docker ps
+                    docker-compose down --remove-orphans || echo "No existing containers"
+                    docker-compose pull
+                    docker-compose up -d
+                    timeout /t 30 /nobreak
+                    docker ps --filter name=hostel
                 """
-                echo "==> Deployment SUCCESSFUL to ${params.ENVIRONMENT}"
+                echo "==> Deployment SUCCESS on ${params.ENVIRONMENT}"
             }
         }
     }
 
-    // ──────────────────────────────────────────
-    // POST ACTIONS
-    // ──────────────────────────────────────────
     post {
         always {
-            echo "==> Pipeline completed. Environment: ${params.ENVIRONMENT}"
+            echo "==============================="
+            echo "Pipeline finished"
+            echo "Environment : ${params.ENVIRONMENT}"
+            echo "Build       : ${env.BUILD_NUMBER}"
+            echo "Status      : ${currentBuild.currentResult}"
+            echo "==============================="
         }
         success {
-            echo "==> BUILD SUCCESS — Application deployed!"
+            echo "BUILD SUCCESS — App deployed at http://localhost:3000"
         }
         failure {
-            echo "==> BUILD FAILED — Check logs above for errors."
+            echo "BUILD FAILED — Check stage logs above"
         }
         cleanup {
             cleanWs()
