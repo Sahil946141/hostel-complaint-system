@@ -1,4 +1,4 @@
-# Java
+# Java / Maven
 *.class
 *.jar
 *.war
@@ -6,15 +6,15 @@
 *.nar
 target/
 *.iml
-
-# Maven
 .mvn/
 mvnw
 mvnw.cmd
 
 # Spring Boot
 *.log
+logs/
 application-local.properties
+application-secret.properties
 
 # IDE
 .idea/
@@ -26,22 +26,56 @@ application-local.properties
 *.njsproj
 *.sln
 *.sw?
+*.swp
+*.bak
 
 # Node.js / React
 node_modules/
 dist/
 build/
+.npm
+.yarn/
+
+# Environment Variables (NEVER commit these)
 .env
 .env.local
+.env.development
 .env.production
+.env.test
 
 # Docker
 .dockerignore
 
-# OS
+# OS Generated
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# Test reports
+# Test Reports
 test-results/
 surefire-reports/
+target/surefire-reports/
+screenshots/
+allure-results/
+
+# Jenkins
+.jenkins/
+
+# Ansible
+*.retry
+ansible/.vault_pass
+
+# Compiled Frontend
+frontend/dist/
+frontend/build/
+
+# Maven Wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# Package lock (keep package-lock.json, ignore yarn.lock if using npm)
+yarn.lock
