@@ -38,6 +38,9 @@ build/
 # Docker
 .dockerignore
 
+# Jenkins local data and credentials
+jenkins/jenkins_home/
+
 # OS
 .DS_Store
 Thumbs.db
