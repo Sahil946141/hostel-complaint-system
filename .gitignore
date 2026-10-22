@@ -1,0 +1,47 @@
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+target/
+*.iml
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Spring Boot
+*.log
+application-local.properties
+
+# IDE
+.idea/
+*.ipr
+*.iws
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Node.js / React
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.production
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test reports
+test-results/
+surefire-reports/

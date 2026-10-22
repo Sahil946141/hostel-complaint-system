@@ -1,0 +1,173 @@
+---
+# Ansible Playbook — Hostel Complaint Management System
+# Task 13 & 14: Configuration Management + Automated Provisioning
+
+- name: Provision Hostel Complaint System Server
+  hosts: all
+  become: yes
+  vars:
+    app_name: hostel-complaint-system
+    app_dir: /opt/hostel-cms
+    docker_compose_version: "2.24.0"
+    postgres_db: hostel_db
+    postgres_user: postgres
+    postgres_password: postgres
+
+  tasks:
+
+    # ─── SYSTEM PACKAGES ───────────────────────────────
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Install required system packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - git
+          - wget
+          - unzip
+        state: present
+      when: ansible_os_family == "Debian"
+
+    # ─── JAVA ───────────────────────────────────────────
+    - name: Install Java 21 (OpenJDK)
+      apt:
+        name: openjdk-21-jdk
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Set JAVA_HOME environment variable
+      lineinfile:
+        path: /etc/environment
+        line: 'JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"'
+        state: present
+
+    # ─── DOCKER ─────────────────────────────────────────
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Docker Engine
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Start and enable Docker service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install Docker Compose plugin
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    # ─── APPLICATION USER ────────────────────────────────
+    - name: Create hostel-cms application user
+      user:
+        name: hostelcms
+        shell: /bin/bash
+        groups: docker
+        append: yes
+        create_home: yes
+        state: present
+
+    # ─── APPLICATION DIRECTORY ───────────────────────────
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: hostelcms
+        group: hostelcms
+        mode: '0755'
+
+    - name: Create logs directory
+      file:
+        path: "{{ app_dir }}/logs"
+        state: directory
+        owner: hostelcms
+        group: hostelcms
+        mode: '0755'
+
+    # ─── OPEN PORTS ─────────────────────────────────────
+    - name: Allow port 8080 (Backend API)
+      ufw:
+        rule: allow
+        port: '8080'
+        proto: tcp
+      ignore_errors: yes
+
+    - name: Allow port 3000 (Frontend)
+      ufw:
+        rule: allow
+        port: '3000'
+        proto: tcp
+      ignore_errors: yes
+
+    - name: Allow port 5432 (PostgreSQL - restricted)
+      ufw:
+        rule: allow
+        port: '5432'
+        proto: tcp
+        from_ip: '127.0.0.1'
+      ignore_errors: yes
+
+    # ─── DEPLOY APPLICATION ──────────────────────────────
+    - name: Pull latest Docker images
+      shell: |
+        cd {{ app_dir }}
+        docker-compose pull
+      ignore_errors: yes
+
+    - name: Deploy application with Docker Compose
+      shell: |
+        cd {{ app_dir }}
+        docker-compose up -d --build --remove-orphans
+      args:
+        chdir: "{{ app_dir }}"
+
+    # ─── HEALTH CHECK ────────────────────────────────────
+    - name: Wait for backend to start (health check)
+      uri:
+        url: "http://localhost:8080/api/auth/health"
+        method: GET
+        status_code: 200
+      register: health_result
+      retries: 10
+      delay: 15
+      until: health_result.status == 200
+      ignore_errors: yes
+
+    - name: Report health check result
+      debug:
+        msg: "Health check: {{ 'PASSED' if health_result.status == 200 else 'FAILED' }}"
+
+    # ─── SERVICES STATUS ─────────────────────────────────
+    - name: Show running containers
+      shell: docker ps --format "table {{ '{{' }}.Names{{ '}}' }}\t{{ '{{' }}.Status{{ '}}' }}\t{{ '{{' }}.Ports{{ '}}' }}"
+      register: containers
+
+    - name: Print container status
+      debug:
+        msg: "{{ containers.stdout_lines }}"
