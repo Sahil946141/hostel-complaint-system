@@ -8,8 +8,9 @@ Create a **Pipeline** job named `hostel-complaint-system-pipeline` and configure
 | --- | --- |
 | SCM | Git |
 | Repository | `https://github.com/Sahil946141/hostel-complaint-system.git` |
-| Branch | `*/feature/task-7-pipeline-deployment` while validating; switch to `*/dev` after merge |
+| Branch | `*/feature/task-7-pipeline-deployment` (switch to `*/dev` after merging the feature branch) |
 | Script path | `Jenkinsfile` |
+| Trigger | Poll SCM: `H/5 * * * *` |
 
 The Windows Jenkins agent needs Java 21, Node.js/npm, Git, Maven at `%USERPROFILE%\.jenkins-tools\apache-maven-3.9.6`, and Docker Desktop with its Linux engine running.
 
@@ -30,4 +31,11 @@ To stop an environment without deleting its persistent database volume, run `doc
 
 ## Verification evidence
 
-Record the Jenkins build number, result, stage view, archived artifacts, test report, and deployed URL after running the Pipeline job. Keep Jenkins credentials, local Jenkins home, and Docker data outside source control.
+- Jenkins Pipeline build `#1` checked out commit `c5de680` from `feature/task-7-pipeline-deployment` and completed with `SUCCESS`.
+- Maven `clean verify` passed all 6 backend tests; the Vite production build succeeded.
+- Jenkins archived `backend/target/complaint-system-1.0.0.jar` and the built `frontend/dist` assets, and published the JUnit report.
+- The `dev` Compose project started healthy PostgreSQL and Spring Boot containers with the Nginx frontend running.
+- HTTP probes returned `200` for `http://localhost:3000/` and `http://localhost:3000/api/auth/health`.
+- SCM polling is configured every five minutes. The Pipeline build and artifacts are available at `http://localhost:9090/jenkins/job/hostel-complaint-system-pipeline/`.
+
+Keep Jenkins credentials, local Jenkins home, and Docker data outside source control.
