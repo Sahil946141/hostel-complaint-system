@@ -61,4 +61,20 @@ public class ComplaintController {
     public ResponseEntity<List<ComplaintResponse>> getByStatus(@PathVariable String status) {
         return ResponseEntity.ok(complaintService.getComplaintsByStatus(status));
     }
+
+    // GET /api/complaints/priority/{priority} — Filter by priority (Task 5)
+    @GetMapping("/priority/{priority}")
+    public ResponseEntity<List<ComplaintResponse>> getByPriority(@PathVariable String priority) {
+        return ResponseEntity.ok(complaintService.getComplaintsByPriority(priority));
+    }
+
+    // DELETE /api/complaints/{id} — Delete complaint (Student - own only) (Task 5)
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteComplaint(
+            @PathVariable Long id,
+            Authentication authentication) {
+        String email = authentication.getName();
+        complaintService.deleteComplaint(id, email);
+        return ResponseEntity.noContent().build();
+    }
 }
