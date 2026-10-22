@@ -8,7 +8,9 @@ import com.hostel.complaintsystem.model.User;
 import com.hostel.complaintsystem.repository.ComplaintRepository;
 import com.hostel.complaintsystem.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -107,6 +109,33 @@ public class ComplaintService {
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Invalid status: " + status);
         }
+    }
+
+    public List<ComplaintResponse> getComplaintsByPriority(String priority) {
+        Complaint.Priority complaintPriority;
+        try {
+            complaintPriority = Complaint.Priority.valueOf(priority.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid priority: " + priority, e);
+        }
+
+        return complaintRepository.findByPriority(complaintPriority)
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public void deleteComplaint(Long id, String studentEmail) {
+        Complaint complaint = complaintRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Complaint not found with id: " + id));
+
+        if (!complaint.getStudent().getEmail().equalsIgnoreCase(studentEmail)) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "You can only delete your own complaints");
+        }
+
+        complaintRepository.delete(complaint);
     }
 
     private ComplaintResponse mapToResponse(Complaint complaint) {

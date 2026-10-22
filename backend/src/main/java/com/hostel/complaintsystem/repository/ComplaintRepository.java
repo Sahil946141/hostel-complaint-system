@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface ComplaintRepository extends JpaRepository<Complaint, Long> {
     List<Complaint> findByStudent(User student);
     List<Complaint> findByStatus(Complaint.Status status);
+    List<Complaint> findByPriority(Complaint.Priority priority);
     List<Complaint> findByAssignedTo(User staff);
     Optional<Complaint> findByComplaintId(String complaintId);
     List<Complaint> findAllByOrderByCreatedAtDesc();
