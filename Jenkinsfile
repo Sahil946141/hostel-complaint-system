@@ -1,64 +1,74 @@
+// =============================================================================
+// Task 8 — Pipeline as Code and Server Deployment (Nginx)
+// -----------------------------------------------------------------------------
+// Declarative Jenkins pipeline with four stages: Checkout, Build, Package,
+// Deploy. The React UI is served through Nginx which also reverse-proxies
+// /api/* to the Spring Boot backend, both running inside Docker Compose.
+//
+// Required stages for Task 8: checkout -> build -> package -> deploy
+// Parameterized: DEPLOY_ENVIRONMENT (dev | staging) changes the host ports and
+//                the isolated Compose project so each environment runs side by
+//                side without port or database-volume collisions.
+// Deploy target: Nginx (frontend container) with /api proxy to Tomcat-embedded
+//                Spring Boot (backend container).
+// =============================================================================
+
 pipeline {
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    // ---- At least one parameterized environment setting (Task 8 requirement) ----
     parameters {
         choice(
-            name: 'ENVIRONMENT',
-            choices: ['dev', 'staging', 'prod'],
-            description: 'Target deployment environment'
-        )
-        string(
-            name: 'DOCKER_IMAGE_TAG',
-            defaultValue: "${env.BUILD_NUMBER ?: 'latest'}",
-            description: 'Docker image tag (e.g. v1.0.0, latest, build number)'
-        )
-        booleanParam(
-            name: 'SKIP_TESTS',
-            defaultValue: false,
-            description: 'Skip Selenium test execution (use only in emergency)'
+            name: 'DEPLOY_ENVIRONMENT',
+            choices: ['dev', 'staging'],
+            description: 'Target environment. dev => http://localhost:3000, staging => http://localhost:3001'
         )
     }
 
     environment {
-        MAVEN_HOME      = 'E:\\Devops_23102A0008\\tools\\apache-maven-3.9.6'
-        JAVA_HOME       = 'C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.12.8-hotspot'
-        PATH            = "${MAVEN_HOME}\\bin;${JAVA_HOME}\\bin;${env.PATH}"
-        APP_NAME        = 'hostel-complaint-system'
-        DOCKER_HUB_REPO = 'hostelcms'
-        IMAGE_NAME      = "${DOCKER_HUB_REPO}/${APP_NAME}"
-        DOCKER_TAG      = "${params.DOCKER_IMAGE_TAG ?: env.BUILD_NUMBER}"
+        // Maven used by the Jenkins agent (Windows). Matches the tool installed
+        // for Task 6's CI job under %USERPROFILE%\.jenkins-tools.
+        MAVEN_CMD = "${env.USERPROFILE}\\.jenkins-tools\\apache-maven-3.9.6\\bin\\mvn.cmd"
+        // Vite build-time API base path; Nginx proxies /api to the backend.
+        VITE_API_URL = '/api'
     }
 
     stages {
 
+        // ---------------------------------------------------------------
+        // STAGE 1 — Checkout: pull the source from the configured SCM
+        // ---------------------------------------------------------------
         stage('Checkout') {
             steps {
-                echo "==> [STAGE 1] Checking out source code..."
+                echo "==> [Checkout] Pulling source from SCM"
                 checkout scm
                 echo "Branch  : ${env.GIT_BRANCH}"
                 echo "Commit  : ${env.GIT_COMMIT}"
                 echo "Build # : ${env.BUILD_NUMBER}"
+                echo "Env     : ${params.DEPLOY_ENVIRONMENT}"
             }
         }
 
+        // ---------------------------------------------------------------
+        // STAGE 2 — Build: compile backend (Maven) + frontend (Vite)
+        // ---------------------------------------------------------------
         stage('Build') {
             steps {
-                echo "==> [STAGE 2] Compiling Spring Boot application..."
-                dir('backend') {
-                    bat "mvn clean compile -q"
-                }
-                echo "==> Compile SUCCESS"
-            }
-        }
+                echo "==> [Build] Compiling Spring Boot backend with Maven"
+                bat "call \"%MAVEN_CMD%\" -B -f backend\\pom.xml clean verify"
 
-        stage('Unit Test') {
-            when {
-                expression { return !params.SKIP_TESTS }
-            }
-            steps {
-                echo "==> [STAGE 3] Running unit tests..."
-                dir('backend') {
-                    bat "mvn test"
+                echo "==> [Build] Building React frontend with Vite"
+                dir('frontend') {
+                    bat 'npm ci'
+                    withEnv(["VITE_API_URL=${env.VITE_API_URL}"]) {
+                        bat 'npm run build'
+                    }
                 }
             }
             post {
@@ -66,115 +76,81 @@ pipeline {
                     junit allowEmptyResults: true,
                           testResults: 'backend/target/surefire-reports/*.xml'
                 }
-                failure {
-                    echo "==> UNIT TESTS FAILED! Blocking deployment."
-                    error("Unit tests failed. Fix before deploying.")
-                }
             }
         }
 
+        // ---------------------------------------------------------------
+        // STAGE 3 — Package: archive the executable JAR + frontend dist
+        // ---------------------------------------------------------------
         stage('Package') {
             steps {
-                echo "==> [STAGE 4] Packaging as JAR artifact..."
-                dir('backend') {
-                    bat "mvn package -DskipTests -q"
-                }
-                echo "==> Artifact: backend/target/complaint-system-1.0.0.jar"
-            }
-            post {
-                success {
-                    archiveArtifacts artifacts: 'backend/target/*.jar',
-                                     fingerprint: true,
-                                     allowEmptyArchive: false
-                    echo "==> Artifact archived successfully"
-                }
+                echo "==> [Package] Archiving build artifacts"
+                archiveArtifacts(
+                    artifacts: 'backend/target/complaint-system-1.0.0.jar,frontend/dist/**',
+                    fingerprint: true,
+                    allowEmptyArchive: false
+                )
             }
         }
 
-        stage('Selenium Tests') {
-            when {
-                expression { return !params.SKIP_TESTS }
-            }
+        // ---------------------------------------------------------------
+        // STAGE 4 — Deploy: build images and start the stack via Compose
+        //            Nginx serves the UI and proxies /api to Spring Boot.
+        // ---------------------------------------------------------------
+        stage('Deploy') {
             steps {
-                echo "==> [STAGE 5] Running Selenium UI tests..."
-                dir('tests') {
-                    bat "mvn test -Dapp.url=http://localhost:3000"
-                }
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true,
-                          testResults: 'tests/target/surefire-reports/*.xml'
-                    archiveArtifacts artifacts: 'tests/test-screenshots/**/*.png',
-                                     allowEmptyArchive: true
-                }
-                failure {
-                    echo "==> SELENIUM TESTS FAILED! Blocking Docker deployment."
-                    error("Selenium tests failed. Fix the defect and recommit.")
-                }
-            }
-        }
+                script {
+                    def envName = params.DEPLOY_ENVIRONMENT
+                    // Parameterized environment setting: each env owns its ports
+                    // and Compose project name + isolated database volume.
+                    def webPort       = (envName == 'dev') ? '3000' : '3001'
+                    def backendPort   = (envName == 'dev') ? '8080' : '8081'
+                    def databasePort  = (envName == 'dev') ? '5433' : '5434'
+                    def projectName   = "hostel-${envName}"
 
-        stage('Docker Build') {
-            steps {
-                echo "==> [STAGE 6] Building Docker image ${IMAGE_NAME}:${DOCKER_TAG}..."
-                dir('backend') {
-                    bat "docker build -t ${IMAGE_NAME}:${DOCKER_TAG} ."
-                    bat "docker tag ${IMAGE_NAME}:${DOCKER_TAG} ${IMAGE_NAME}:latest"
-                }
-                echo "==> Docker image built: ${IMAGE_NAME}:${DOCKER_TAG}"
-            }
-        }
+                    echo "==> [Deploy] Environment=${envName} project=${projectName} web=${webPort} api=${backendPort} db=${databasePort}"
 
-        stage('Docker Push') {
-            steps {
-                echo "==> [STAGE 7] Pushing to Docker Hub..."
-                withCredentials([usernamePassword(
-                    credentialsId: 'docker-hub-credentials',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    bat "docker login -u %DOCKER_USER% -p %DOCKER_PASS%"
-                    bat "docker push ${IMAGE_NAME}:${DOCKER_TAG}"
-                    bat "docker push ${IMAGE_NAME}:latest"
-                    bat "docker logout"
-                }
-                echo "==> Image pushed to registry"
-            }
-        }
+                    withEnv([
+                        "FRONTEND_HOST_PORT=${webPort}",
+                        "BACKEND_HOST_PORT=${backendPort}",
+                        "POSTGRES_HOST_PORT=${databasePort}",
+                        "VITE_API_URL=${env.VITE_API_URL}"
+                    ]) {
+                        // Validate the resolved Compose file before bringing it up.
+                        bat "docker compose -p ${projectName} config --quiet"
 
-        stage('Deploy Container') {
-            steps {
-                echo "==> [STAGE 8] Deploying to ${params.ENVIRONMENT}..."
-                bat """
-                    docker-compose down --remove-orphans || echo "No existing containers"
-                    docker-compose pull
-                    docker-compose up -d
-                    timeout /t 30 /nobreak
-                    docker ps --filter name=hostel
-                """
-                echo "==> Deployment SUCCESS on ${params.ENVIRONMENT}"
+                        // Build images and start all services (db -> backend -> frontend),
+                        // waiting until they are healthy.
+                        bat "docker compose -p ${projectName} up --detach --build --wait --wait-timeout 180"
+
+                        // Smoke-test the deployed application URLs.
+                        bat 'curl.exe --fail --silent --show-error "http://localhost:%FRONTEND_HOST_PORT%/"'
+                        bat 'curl.exe --fail --silent --show-error "http://localhost:%FRONTEND_HOST_PORT%/api/auth/health"'
+                    }
+
+                    echo "==> [Deploy] ${envName} is live at http://localhost:${webPort}/"
+                }
             }
         }
     }
 
     post {
         always {
-            echo "==============================="
+            echo "================================================="
             echo "Pipeline finished"
-            echo "Environment : ${params.ENVIRONMENT}"
-            echo "Build       : ${env.BUILD_NUMBER}"
-            echo "Status      : ${currentBuild.currentResult}"
-            echo "==============================="
+            echo "Environment : ${params.DEPLOY_ENVIRONMENT}"
+            echo "Build #     : ${env.BUILD_NUMBER}"
+            echo "Result      : ${currentBuild.currentResult}"
+            echo "================================================="
         }
         success {
-            echo "BUILD SUCCESS — App deployed at http://localhost:3000"
+            script {
+                def url = (params.DEPLOY_ENVIRONMENT == 'dev') ? 'http://localhost:3000' : 'http://localhost:3001'
+                echo "BUILD SUCCESS — Application available at ${url}"
+            }
         }
         failure {
-            echo "BUILD FAILED — Check stage logs above"
-        }
-        cleanup {
-            cleanWs()
+            echo "BUILD FAILED — Inspect the failing stage log above"
         }
     }
 }
