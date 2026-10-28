@@ -38,8 +38,8 @@ public class LoginTest extends BaseTest {
 
         takeScreenshot("login_before_submit");
 
-        // ⚠️  DELIBERATE DEFECT: wrong button ID — will throw NoSuchElementException
-        driver.findElement(By.id("login-btn-BROKEN")).click();
+        // ✅  DEFECT FIXED: restored correct button ID (was "login-btn-BROKEN")
+        driver.findElement(By.id("login-btn")).click();
 
         wait.until(ExpectedConditions.urlContains("/student"));
         Assert.assertTrue(driver.getCurrentUrl().contains("/student"),
