@@ -2,21 +2,31 @@
 <!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd">
 <suite name="Hostel CMS Test Suite" verbose="2" parallel="false">
 
+    <!-- User Journey 1: Authentication / Login -->
     <test name="Login Tests">
         <classes>
             <class name="com.hostel.tests.LoginTest"/>
         </classes>
     </test>
 
+    <!-- User Journey 2: Raise a Complaint -->
     <test name="Complaint Tests">
         <classes>
             <class name="com.hostel.tests.RaiseComplaintTest"/>
         </classes>
     </test>
 
+    <!-- User Journey 3: Admin Dashboard & Status Management -->
     <test name="Admin Dashboard Tests">
         <classes>
             <class name="com.hostel.tests.AdminDashboardTest"/>
+        </classes>
+    </test>
+
+    <!-- User Journey 4: New User Registration -->
+    <test name="Registration Tests">
+        <classes>
+            <class name="com.hostel.tests.RegistrationTest"/>
         </classes>
     </test>
 
