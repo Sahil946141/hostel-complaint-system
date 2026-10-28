@@ -1,23 +1,28 @@
 package com.hostel.tests;
 
-import org.openqa.selenium.*;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-
 /**
- * TC-004: Raise Complaint Test
- * Tests the complete complaint submission flow
+ * User Journey 2 — Raise a Complaint
+ *
+ * TC-004  Student raises a complaint and sees the generated CMP- ID
+ * TC-005  Empty form submission is blocked by HTML5 validation
  */
 public class RaiseComplaintTest extends BaseTest {
 
-    private static final String STUDENT_EMAIL = "student@hostel.com";
+    private static final String STUDENT_EMAIL    = "student@hostel.com";
     private static final String STUDENT_PASSWORD = "student123";
+
+    // Test data
+    private static final String COMPLAINT_TITLE =
+            "WiFi not working in Block A";
+    private static final String COMPLAINT_DESCRIPTION =
+            "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.";
 
     private void loginAsStudent() {
         driver.get(BASE_URL + "/login");
@@ -28,63 +33,62 @@ public class RaiseComplaintTest extends BaseTest {
         wait.until(ExpectedConditions.urlContains("/student"));
     }
 
+    /**
+     * Type into a React controlled input.
+     * React fires onChange on every keystroke when the element has focus.
+     * Steps: wait until clickable → click to focus → sendKeys character by character.
+     * No Ctrl+A / DELETE — the fields start empty so there is nothing to clear.
+     */
+    private void fillField(By locator, String text) {
+        WebElement el = wait.until(ExpectedConditions.elementToBeClickable(locator));
+        el.click();
+        el.sendKeys(text);
+    }
+
     @Test(description = "TC-004: Student can raise a complaint successfully")
-    public void testRaiseComplaint() throws Exception {
+    public void testRaiseComplaint() {
         loginAsStudent();
 
-        // Navigate to raise complaint
         driver.get(BASE_URL + "/raise-complaint");
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("complaint-form")));
 
-        // Fill form
-        driver.findElement(By.id("complaint-title")).sendKeys("WiFi not working in Block A");
-        driver.findElement(By.id("complaint-description")).sendKeys(
-            "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.");
+        // Fill the form — plain sendKeys on focused empty fields fires React onChange
+        fillField(By.id("complaint-title"),       COMPLAINT_TITLE);
+        fillField(By.id("complaint-description"), COMPLAINT_DESCRIPTION);
 
-        Select category = new Select(driver.findElement(By.id("complaint-category")));
-        category.selectByValue("WIFI");
-
-        Select priority = new Select(driver.findElement(By.id("complaint-priority")));
-        priority.selectByValue("HIGH");
+        new Select(wait.until(ExpectedConditions.elementToBeClickable(
+                By.id("complaint-category")))).selectByValue("WIFI");
+        new Select(wait.until(ExpectedConditions.elementToBeClickable(
+                By.id("complaint-priority")))).selectByValue("HIGH");
 
         takeScreenshot("complaint_form_filled");
 
-        // Submit
         driver.findElement(By.id("submit-complaint-btn")).click();
 
-        // Assert: success message appears
+        // Assertion: success alert with a CMP- complaint ID must appear
         WebElement success = wait.until(ExpectedConditions.visibilityOfElementLocated(
-            By.className("alert-success")));
+                By.className("alert-success")));
         Assert.assertTrue(success.getText().contains("CMP-"),
-            "Success message should contain complaint ID");
+                "Success message should contain complaint ID (CMP-). Actual: "
+                + success.getText());
 
         takeScreenshot("complaint_submitted");
     }
 
-    @Test(description = "TC-005: Complaint form validation - empty submission should fail")
-    public void testComplaintFormValidation() throws Exception {
+    @Test(description = "TC-005: Empty complaint form submission is blocked by validation")
+    public void testComplaintFormValidation() {
         loginAsStudent();
         driver.get(BASE_URL + "/raise-complaint");
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("complaint-form")));
 
-        // Try to submit empty form
+        // Click submit without filling any fields
         driver.findElement(By.id("submit-complaint-btn")).click();
 
-        // Assert: HTML5 validation prevents submission (URL should NOT change)
-        Thread.sleep(500);
+        // Assertion: still on raise-complaint page (HTML5 required blocks submit)
+        try { Thread.sleep(600); } catch (InterruptedException ignored) {}
         Assert.assertTrue(driver.getCurrentUrl().contains("/raise-complaint"),
-            "Form should not submit with empty required fields");
+                "Form must not submit with empty required fields");
 
         takeScreenshot("complaint_form_validation");
-    }
-
-    private void takeScreenshot(String name) {
-        try {
-            File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
-            String path = SCREENSHOTS_DIR + "/" + name + "_" + generateTimestamp() + ".png";
-            Files.copy(src.toPath(), Paths.get(path));
-        } catch (Exception e) {
-            System.err.println("Screenshot failed: " + e.getMessage());
-        }
     }
 }

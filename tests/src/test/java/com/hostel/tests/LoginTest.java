@@ -1,94 +1,83 @@
 package com.hostel.tests;
 
-import org.openqa.selenium.*;
+import org.openqa.selenium.By;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.testng.Assert;
 import org.testng.annotations.Test;
-import ru.yandex.qatools.ashot.AShot;
-import ru.yandex.qatools.ashot.Screenshot;
-
-import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 
 /**
- * TC-001: Login Test
- * Tests student login with valid and invalid credentials
+ * User Journey 1 — Authentication / Login
+ *
+ * TC-001  Valid student login redirects to the student dashboard
+ * TC-002  Invalid login credentials show an error message
+ * TC-003  Admin login redirects to the admin dashboard
  */
 public class LoginTest extends BaseTest {
 
-    private static final String TEST_EMAIL = "student@hostel.com";
-    private static final String TEST_PASSWORD = "student123";
+    private static final String STUDENT_EMAIL = "student@hostel.com";
+    private static final String STUDENT_PASSWORD = "student123";
+    private static final String ADMIN_EMAIL = "admin@hostel.com";
+    private static final String ADMIN_PASSWORD = "admin123";
 
     @Test(description = "TC-001: Valid student login should redirect to student dashboard")
-    public void testValidStudentLogin() throws Exception {
+    public void testValidStudentLogin() {
         driver.get(BASE_URL + "/login");
 
-        // Wait for login page to load
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("login-email")));
 
-        // Enter credentials
-        driver.findElement(By.id("login-email")).sendKeys(TEST_EMAIL);
-        driver.findElement(By.id("login-password")).sendKeys(TEST_PASSWORD);
+        // Test data: valid student credentials
+        driver.findElement(By.id("login-email")).sendKeys(STUDENT_EMAIL);
+        driver.findElement(By.id("login-password")).sendKeys(STUDENT_PASSWORD);
 
-        // Take screenshot before submit
         takeScreenshot("login_before_submit");
 
-        // Click login
         driver.findElement(By.id("login-btn")).click();
 
-        // Assert: redirect to student dashboard (URL should change)
+        // Assertion: URL should change to /student
         wait.until(ExpectedConditions.urlContains("/student"));
         Assert.assertTrue(driver.getCurrentUrl().contains("/student"),
-            "Should redirect to student dashboard after login");
+                "Should redirect to student dashboard after login");
 
         takeScreenshot("login_success");
     }
 
     @Test(description = "TC-002: Invalid login credentials should show error message")
-    public void testInvalidLogin() throws Exception {
+    public void testInvalidLogin() {
         driver.get(BASE_URL + "/login");
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("login-email")));
 
+        // Test data: invalid credentials
         driver.findElement(By.id("login-email")).sendKeys("wrong@email.com");
         driver.findElement(By.id("login-password")).sendKeys("wrongpassword");
         driver.findElement(By.id("login-btn")).click();
 
-        // Assert: error message should appear
+        // Assertion: error alert must be visible
         WebElement errorAlert = wait.until(ExpectedConditions.visibilityOfElementLocated(
-            By.className("alert-error")));
-        Assert.assertNotNull(errorAlert, "Error message should be displayed for invalid login");
-        Assert.assertTrue(errorAlert.isDisplayed(), "Error alert must be visible");
+                By.className("alert-error")));
+        Assert.assertTrue(errorAlert.isDisplayed(),
+                "Error message should be displayed for invalid login");
 
         takeScreenshot("login_invalid_error");
     }
 
     @Test(description = "TC-003: Admin login should redirect to admin dashboard")
-    public void testAdminLogin() throws Exception {
+    public void testAdminLogin() {
         driver.get(BASE_URL + "/login");
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("login-email")));
 
-        driver.findElement(By.id("login-email")).sendKeys("admin@hostel.com");
-        driver.findElement(By.id("login-password")).sendKeys("admin123");
+        // Test data: valid admin credentials
+        driver.findElement(By.id("login-email")).sendKeys(ADMIN_EMAIL);
+        driver.findElement(By.id("login-password")).sendKeys(ADMIN_PASSWORD);
         driver.findElement(By.id("login-btn")).click();
 
+        // Assertion: URL should change to /admin
         wait.until(ExpectedConditions.urlContains("/admin"));
         Assert.assertTrue(driver.getCurrentUrl().contains("/admin"),
-            "Admin should be redirected to admin dashboard");
+                "Admin should be redirected to admin dashboard");
 
         takeScreenshot("admin_login_success");
-    }
-
-    private void takeScreenshot(String name) {
-        try {
-            File src = ((TakesScreenshot) driver).getScreenshotAs(OutputType.FILE);
-            String path = SCREENSHOTS_DIR + "/" + name + "_" + generateTimestamp() + ".png";
-            Files.copy(src.toPath(), Paths.get(path));
-            System.out.println("Screenshot saved: " + path);
-        } catch (Exception e) {
-            System.err.println("Screenshot failed: " + e.getMessage());
-        }
     }
 }
