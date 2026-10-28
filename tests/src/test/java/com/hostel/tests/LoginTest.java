@@ -12,13 +12,20 @@ import org.testng.annotations.Test;
  * TC-001  Valid student login redirects to the student dashboard
  * TC-002  Invalid login credentials show an error message
  * TC-003  Admin login redirects to the admin dashboard
+ *
+ * TASK 10 — DELIBERATE DEFECT INTRODUCED:
+ *   TC-001 uses id="login-btn-BROKEN" (wrong button ID) to simulate a
+ *   developer accidentally renaming a UI element.  This causes the test
+ *   to fail with NoSuchElementException, which blocks the Deploy stage.
+ *   See commit "test(task-10): introduce deliberate defect in LoginTest".
+ *   Fixed in commit "fix(task-10): correct broken selector in LoginTest".
  */
 public class LoginTest extends BaseTest {
 
-    private static final String STUDENT_EMAIL = "student@hostel.com";
+    private static final String STUDENT_EMAIL    = "student@hostel.com";
     private static final String STUDENT_PASSWORD = "student123";
-    private static final String ADMIN_EMAIL = "admin@hostel.com";
-    private static final String ADMIN_PASSWORD = "admin123";
+    private static final String ADMIN_EMAIL      = "admin@hostel.com";
+    private static final String ADMIN_PASSWORD   = "admin123";
 
     @Test(description = "TC-001: Valid student login should redirect to student dashboard")
     public void testValidStudentLogin() {
@@ -26,15 +33,14 @@ public class LoginTest extends BaseTest {
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("login-email")));
 
-        // Test data: valid student credentials
         driver.findElement(By.id("login-email")).sendKeys(STUDENT_EMAIL);
         driver.findElement(By.id("login-password")).sendKeys(STUDENT_PASSWORD);
 
         takeScreenshot("login_before_submit");
 
-        driver.findElement(By.id("login-btn")).click();
+        // ⚠️  DELIBERATE DEFECT: wrong button ID — will throw NoSuchElementException
+        driver.findElement(By.id("login-btn-BROKEN")).click();
 
-        // Assertion: URL should change to /student
         wait.until(ExpectedConditions.urlContains("/student"));
         Assert.assertTrue(driver.getCurrentUrl().contains("/student"),
                 "Should redirect to student dashboard after login");
@@ -48,12 +54,10 @@ public class LoginTest extends BaseTest {
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("login-email")));
 
-        // Test data: invalid credentials
         driver.findElement(By.id("login-email")).sendKeys("wrong@email.com");
         driver.findElement(By.id("login-password")).sendKeys("wrongpassword");
         driver.findElement(By.id("login-btn")).click();
 
-        // Assertion: error alert must be visible
         WebElement errorAlert = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.className("alert-error")));
         Assert.assertTrue(errorAlert.isDisplayed(),
@@ -68,12 +72,10 @@ public class LoginTest extends BaseTest {
 
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("login-email")));
 
-        // Test data: valid admin credentials
         driver.findElement(By.id("login-email")).sendKeys(ADMIN_EMAIL);
         driver.findElement(By.id("login-password")).sendKeys(ADMIN_PASSWORD);
         driver.findElement(By.id("login-btn")).click();
 
-        // Assertion: URL should change to /admin
         wait.until(ExpectedConditions.urlContains("/admin"));
         Assert.assertTrue(driver.getCurrentUrl().contains("/admin"),
                 "Admin should be redirected to admin dashboard");

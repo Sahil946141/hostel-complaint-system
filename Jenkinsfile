@@ -1,16 +1,17 @@
 // =============================================================================
-// Task 8 — Pipeline as Code and Server Deployment (Nginx)
+// Task 10 — Continuous Testing in Jenkins
 // -----------------------------------------------------------------------------
-// Declarative Jenkins pipeline with four stages: Checkout, Build, Package,
-// Deploy. The React UI is served through Nginx which also reverse-proxies
-// /api/* to the Spring Boot backend, both running inside Docker Compose.
+// Extends the Task 8 pipeline (Checkout → Build → Package → Deploy) with a
+// Selenium quality gate:
 //
-// Required stages for Task 8: checkout -> build -> package -> deploy
-// Parameterized: DEPLOY_ENVIRONMENT (dev | staging) changes the host ports and
-//                the isolated Compose project so each environment runs side by
-//                side without port or database-volume collisions.
-// Deploy target: Nginx (frontend container) with /api proxy to Tomcat-embedded
-//                Spring Boot (backend container).
+//   Checkout → Build → Package → Deploy → Selenium Tests
+//
+// Rules:
+//   • JUnit XML report published after every run (pass OR fail).
+//   • Failure screenshots archived as pipeline artefacts.
+//   • A FAILED Selenium stage calls error() so the pipeline stops and the
+//     deploy is NOT considered successful — deployment is blocked.
+//   • SKIP_SELENIUM param lets operators bypass the gate in an emergency.
 // =============================================================================
 
 pipeline {
@@ -22,31 +23,30 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
     }
 
-    // ---- At least one parameterized environment setting (Task 8 requirement) ----
     parameters {
         choice(
             name: 'DEPLOY_ENVIRONMENT',
             choices: ['dev', 'staging'],
-            description: 'Target environment. dev => http://localhost:3000, staging => http://localhost:3001'
+            description: 'dev => http://localhost:3000  |  staging => http://localhost:3001'
+        )
+        booleanParam(
+            name: 'SKIP_SELENIUM',
+            defaultValue: false,
+            description: 'Emergency bypass: skip Selenium quality gate (do NOT use in normal runs)'
         )
     }
 
     environment {
-        // Maven used by the Jenkins agent (Windows). Matches the tool installed
-        // for Task 6's CI job under %USERPROFILE%\.jenkins-tools.
-        MAVEN_CMD = "${env.USERPROFILE}\\.jenkins-tools\\apache-maven-3.9.6\\bin\\mvn.cmd"
-        // Vite build-time API base path; Nginx proxies /api to the backend.
+        MAVEN_CMD    = "${env.USERPROFILE}\\.jenkins-tools\\apache-maven-3.9.6\\bin\\mvn.cmd"
         VITE_API_URL = '/api'
     }
 
     stages {
 
-        // ---------------------------------------------------------------
-        // STAGE 1 — Checkout: pull the source from the configured SCM
-        // ---------------------------------------------------------------
+        // ── 1. Checkout ────────────────────────────────────────────────────────
         stage('Checkout') {
             steps {
-                echo "==> [Checkout] Pulling source from SCM"
+                echo "==> [Checkout] Pulling source"
                 checkout scm
                 echo "Branch  : ${env.GIT_BRANCH}"
                 echo "Commit  : ${env.GIT_COMMIT}"
@@ -55,15 +55,13 @@ pipeline {
             }
         }
 
-        // ---------------------------------------------------------------
-        // STAGE 2 — Build: compile backend (Maven) + frontend (Vite)
-        // ---------------------------------------------------------------
+        // ── 2. Build ───────────────────────────────────────────────────────────
         stage('Build') {
             steps {
-                echo "==> [Build] Compiling Spring Boot backend with Maven"
+                echo "==> [Build] Maven clean verify (backend)"
                 bat "call \"%MAVEN_CMD%\" -B -f backend\\pom.xml clean verify"
 
-                echo "==> [Build] Building React frontend with Vite"
+                echo "==> [Build] Vite production build (frontend)"
                 dir('frontend') {
                     bat 'npm ci'
                     withEnv(["VITE_API_URL=${env.VITE_API_URL}"]) {
@@ -73,18 +71,17 @@ pipeline {
             }
             post {
                 always {
+                    // Publish unit-test report from the Build stage
                     junit allowEmptyResults: true,
                           testResults: 'backend/target/surefire-reports/*.xml'
                 }
             }
         }
 
-        // ---------------------------------------------------------------
-        // STAGE 3 — Package: archive the executable JAR + frontend dist
-        // ---------------------------------------------------------------
+        // ── 3. Package ─────────────────────────────────────────────────────────
         stage('Package') {
             steps {
-                echo "==> [Package] Archiving build artifacts"
+                echo "==> [Package] Archiving build artefacts"
                 archiveArtifacts(
                     artifacts: 'backend/target/complaint-system-1.0.0.jar,frontend/dist/**',
                     fingerprint: true,
@@ -93,22 +90,17 @@ pipeline {
             }
         }
 
-        // ---------------------------------------------------------------
-        // STAGE 4 — Deploy: build images and start the stack via Compose
-        //            Nginx serves the UI and proxies /api to Spring Boot.
-        // ---------------------------------------------------------------
+        // ── 4. Deploy ──────────────────────────────────────────────────────────
         stage('Deploy') {
             steps {
                 script {
-                    def envName = params.DEPLOY_ENVIRONMENT
-                    // Parameterized environment setting: each env owns its ports
-                    // and Compose project name + isolated database volume.
-                    def webPort       = (envName == 'dev') ? '3000' : '3001'
-                    def backendPort   = (envName == 'dev') ? '8080' : '8081'
-                    def databasePort  = (envName == 'dev') ? '5433' : '5434'
-                    def projectName   = "hostel-${envName}"
+                    def envName      = params.DEPLOY_ENVIRONMENT
+                    def webPort      = (envName == 'dev') ? '3000' : '3001'
+                    def backendPort  = (envName == 'dev') ? '8080' : '8081'
+                    def databasePort = (envName == 'dev') ? '5433' : '5434'
+                    def projectName  = "hostel-${envName}"
 
-                    echo "==> [Deploy] Environment=${envName} project=${projectName} web=${webPort} api=${backendPort} db=${databasePort}"
+                    echo "==> [Deploy] ${envName} | web=${webPort} api=${backendPort} db=${databasePort}"
 
                     withEnv([
                         "FRONTEND_HOST_PORT=${webPort}",
@@ -116,19 +108,59 @@ pipeline {
                         "POSTGRES_HOST_PORT=${databasePort}",
                         "VITE_API_URL=${env.VITE_API_URL}"
                     ]) {
-                        // Validate the resolved Compose file before bringing it up.
                         bat "docker compose -p ${projectName} config --quiet"
-
-                        // Build images and start all services (db -> backend -> frontend),
-                        // waiting until they are healthy.
                         bat "docker compose -p ${projectName} up --detach --build --wait --wait-timeout 180"
-
-                        // Smoke-test the deployed application URLs.
                         bat 'curl.exe --fail --silent --show-error "http://localhost:%FRONTEND_HOST_PORT%/"'
                         bat 'curl.exe --fail --silent --show-error "http://localhost:%FRONTEND_HOST_PORT%/api/auth/health"'
                     }
 
-                    echo "==> [Deploy] ${envName} is live at http://localhost:${webPort}/"
+                    echo "==> [Deploy] Live at http://localhost:${webPort}/"
+                }
+            }
+        }
+
+        // ── 5. Selenium Tests  ← Task 10 quality gate ─────────────────────────
+        //
+        //   Runs the full TestNG suite against the deployed application.
+        //   • Publishes the JUnit XML report on every outcome.
+        //   • Archives failure screenshots as pipeline artefacts.
+        //   • Calls error() on failure so the pipeline STOPS and the deploy
+        //     step that just ran is marked as quality-gate-blocked.
+        //   • Controlled by SKIP_SELENIUM emergency parameter.
+        // ──────────────────────────────────────────────────────────────────────
+        stage('Selenium Tests') {
+            when {
+                expression { return !params.SKIP_SELENIUM }
+            }
+            steps {
+                script {
+                    def appUrl = (params.DEPLOY_ENVIRONMENT == 'dev')
+                            ? 'http://localhost:3000'
+                            : 'http://localhost:3001'
+                    echo "==> [Selenium] Running suite against ${appUrl}"
+
+                    bat "call \"%MAVEN_CMD%\" -B -f tests\\pom.xml clean test -Dapp.url=${appUrl}"
+                }
+            }
+            post {
+                always {
+                    // ── Publish JUnit test report ──────────────────────────
+                    junit allowEmptyResults: true,
+                          testResults: 'tests/target/surefire-reports/*.xml'
+
+                    // ── Archive failure screenshots as pipeline artefacts ──
+                    archiveArtifacts(
+                        artifacts: 'tests/test-screenshots/**/*.png',
+                        allowEmptyArchive: true,
+                        fingerprint: false
+                    )
+
+                    echo "==> [Selenium] Test report published"
+                }
+                failure {
+                    // ── Block deployment: failed tests stop the pipeline ───
+                    echo "==> [Selenium] TESTS FAILED — deployment blocked!"
+                    error("Selenium quality gate failed. Fix the defect and recommit.")
                 }
             }
         }
@@ -137,7 +169,7 @@ pipeline {
     post {
         always {
             echo "================================================="
-            echo "Pipeline finished"
+            echo "Pipeline complete"
             echo "Environment : ${params.DEPLOY_ENVIRONMENT}"
             echo "Build #     : ${env.BUILD_NUMBER}"
             echo "Result      : ${currentBuild.currentResult}"
@@ -145,12 +177,13 @@ pipeline {
         }
         success {
             script {
-                def url = (params.DEPLOY_ENVIRONMENT == 'dev') ? 'http://localhost:3000' : 'http://localhost:3001'
-                echo "BUILD SUCCESS — Application available at ${url}"
+                def url = (params.DEPLOY_ENVIRONMENT == 'dev')
+                        ? 'http://localhost:3000' : 'http://localhost:3001'
+                echo "BUILD SUCCESS — Application live at ${url}"
             }
         }
         failure {
-            echo "BUILD FAILED — Inspect the failing stage log above"
+            echo "BUILD FAILED — inspect the failing stage above"
         }
     }
 }
