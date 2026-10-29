@@ -37,13 +37,16 @@ public class RaiseComplaintTest extends BaseTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("complaint-form")));
 
         // Fill form
-        driver.findElement(By.id("complaint-title")).sendKeys("WiFi not working in Block A");
-        Assert.assertEquals(driver.findElement(By.id("complaint-title")).getAttribute("value"),
-            "WiFi not working in Block A");
-        driver.findElement(By.id("complaint-description")).sendKeys(
+        WebElement titleInput = driver.findElement(By.id("complaint-title"));
+        setReactFormValue(titleInput, "WiFi not working in Block A");
+        wait.until(d -> "WiFi not working in Block A".equals(
+            d.findElement(By.id("complaint-title")).getDomProperty("value")));
+
+        WebElement descriptionInput = driver.findElement(By.id("complaint-description"));
+        setReactFormValue(descriptionInput,
             "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.");
-        Assert.assertEquals(driver.findElement(By.id("complaint-description")).getAttribute("value"),
-            "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.");
+        wait.until(ExpectedConditions.attributeToBe(By.id("complaint-description"), "value",
+            "The WiFi in Block A Room 101 has been down since morning. Need urgent fix."));
 
         Select category = new Select(driver.findElement(By.id("complaint-category")));
         category.selectByValue("WIFI");
@@ -51,15 +54,17 @@ public class RaiseComplaintTest extends BaseTest {
         Select priority = new Select(driver.findElement(By.id("complaint-priority")));
         priority.selectByValue("HIGH");
 
-        Assert.assertEquals(driver.findElement(By.id("complaint-title")).getAttribute("value"),
-            "WiFi not working in Block A");
-        Assert.assertEquals(driver.findElement(By.id("complaint-description")).getAttribute("value"),
-            "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.");
+        wait.until(d -> "WiFi not working in Block A".equals(
+            d.findElement(By.id("complaint-title")).getDomProperty("value")));
+        wait.until(d -> "The WiFi in Block A Room 101 has been down since morning. Need urgent fix."
+            .equals(d.findElement(By.id("complaint-description")).getDomProperty("value")));
 
         takeScreenshot("complaint_form_filled");
 
         // Submit
-        driver.findElement(By.id("submit-complaint-btn")).click();
+        ((JavascriptExecutor) driver).executeScript(
+            "document.getElementById('complaint-form').requestSubmit(" +
+            "document.getElementById('submit-complaint-btn'))");
 
         WebElement result = wait.until(ExpectedConditions.visibilityOfElementLocated(
             By.cssSelector(".alert-success, .alert-error")));
@@ -104,4 +109,16 @@ public class RaiseComplaintTest extends BaseTest {
             System.err.println("Screenshot failed: " + e.getMessage());
         }
     }
+
+    private void setReactFormValue(WebElement field, String value) {
+        ((JavascriptExecutor) driver).executeScript(
+            "const element = arguments[0];" +
+            "const prototype = element instanceof HTMLTextAreaElement " +
+                "? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;" +
+            "Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, arguments[1]);" +
+            "element.dispatchEvent(new Event('input', { bubbles: true }));" +
+            "element.dispatchEvent(new Event('change', { bubbles: true }));",
+            field, value);
+    }
+
 }

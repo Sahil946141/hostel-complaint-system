@@ -17,10 +17,12 @@ The pipeline uses:
 
 The Jenkins test deployment enables deterministic student/admin test accounts through `APP_TEST_FIXTURES_ENABLED`. The Compose default is disabled, so normal deployments do not create these accounts.
 
-For example, build `#3` publishes:
+The Selenium suite uses Selenium 4.52.0 with the installed Chrome/ChromeDriver. Its complaint-form test updates React-controlled fields through native DOM value setters and bubbling input/change events, then submits with the form's native `requestSubmit` method. This keeps the test focused on React state, form validation, API submission, and persisted results without relying on headless keyboard injection.
 
-- `localhost:5000/hostelcms/hostel-complaint-system-backend:1.0.0-3`
-- `localhost:5000/hostelcms/hostel-complaint-system-frontend:1.0.0-3`
+For example, a successful build `#<BUILD_NUMBER>` publishes:
+
+- `localhost:5000/hostelcms/hostel-complaint-system-backend:1.0.0-<BUILD_NUMBER>`
+- `localhost:5000/hostelcms/hostel-complaint-system-frontend:1.0.0-<BUILD_NUMBER>`
 - Corresponding `:latest` tags
 
 The registry container is named `hostel-task12-registry`; its data persists in the `hostel-task12-registry-data` volume. Published images can be queried at `http://localhost:5000/v2/_catalog`.
