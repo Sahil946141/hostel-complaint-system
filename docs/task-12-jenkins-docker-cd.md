@@ -15,6 +15,8 @@ The pipeline uses:
 | `IMAGE_VERSION` | `1.0.0` | Semantic version; the build number is appended as a unique tag |
 | `SKIP_SELENIUM` | `false` | Optional emergency bypass; not used for acceptance verification |
 
+The Jenkins test deployment enables deterministic student/admin test accounts through `APP_TEST_FIXTURES_ENABLED`. The Compose default is disabled, so normal deployments do not create these accounts.
+
 For example, build `#3` publishes:
 
 - `localhost:5000/hostelcms/hostel-complaint-system-backend:1.0.0-3`

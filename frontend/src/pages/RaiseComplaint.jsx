@@ -11,7 +11,10 @@ export default function RaiseComplaint() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((currentForm) => ({ ...currentForm, [name]: value }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();

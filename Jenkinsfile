@@ -143,7 +143,8 @@ pipeline {
                         "FRONTEND_HOST_PORT=${webPort}",
                         "BACKEND_HOST_PORT=${backendPort}",
                         "POSTGRES_HOST_PORT=${databasePort}",
-                        "VITE_API_URL=${env.VITE_API_URL}"
+                        "VITE_API_URL=${env.VITE_API_URL}",
+                        "APP_TEST_FIXTURES_ENABLED=true"
                     ]) {
                         bat "docker compose -p ${projectName} config --quiet"
                         bat "docker compose -p ${projectName} up --detach --build --wait --wait-timeout 180"

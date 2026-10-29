@@ -38,7 +38,11 @@ public class RaiseComplaintTest extends BaseTest {
 
         // Fill form
         driver.findElement(By.id("complaint-title")).sendKeys("WiFi not working in Block A");
+        Assert.assertEquals(driver.findElement(By.id("complaint-title")).getAttribute("value"),
+            "WiFi not working in Block A");
         driver.findElement(By.id("complaint-description")).sendKeys(
+            "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.");
+        Assert.assertEquals(driver.findElement(By.id("complaint-description")).getAttribute("value"),
             "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.");
 
         Select category = new Select(driver.findElement(By.id("complaint-category")));
@@ -47,16 +51,29 @@ public class RaiseComplaintTest extends BaseTest {
         Select priority = new Select(driver.findElement(By.id("complaint-priority")));
         priority.selectByValue("HIGH");
 
+        Assert.assertEquals(driver.findElement(By.id("complaint-title")).getAttribute("value"),
+            "WiFi not working in Block A");
+        Assert.assertEquals(driver.findElement(By.id("complaint-description")).getAttribute("value"),
+            "The WiFi in Block A Room 101 has been down since morning. Need urgent fix.");
+
         takeScreenshot("complaint_form_filled");
 
         // Submit
         driver.findElement(By.id("submit-complaint-btn")).click();
 
-        // Assert: success message appears
-        WebElement success = wait.until(ExpectedConditions.visibilityOfElementLocated(
-            By.className("alert-success")));
-        Assert.assertTrue(success.getText().contains("CMP-"),
-            "Success message should contain complaint ID");
+        WebElement result = wait.until(ExpectedConditions.visibilityOfElementLocated(
+            By.cssSelector(".alert-success, .alert-error")));
+        Assert.assertTrue(result.getAttribute("class").contains("alert-success"),
+            "Complaint submission failed: " + result.getText());
+        Assert.assertTrue(result.getText().contains("CMP-"),
+            "Success message should contain the complaint ID");
+
+        // The form redirects after confirmation; assert the saved complaint on the destination page.
+        wait.until(ExpectedConditions.urlContains("/my-complaints"));
+        WebElement complaintRow = wait.until(ExpectedConditions.visibilityOfElementLocated(
+            By.xpath("//tr[.//td[normalize-space()='WiFi not working in Block A']]")));
+        Assert.assertTrue(complaintRow.isDisplayed(),
+            "The newly submitted complaint should appear in the student's list");
 
         takeScreenshot("complaint_submitted");
     }
