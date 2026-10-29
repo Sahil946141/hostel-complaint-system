@@ -2,9 +2,9 @@ package com.hostel.complaintsystem.config;
 
 import com.hostel.complaintsystem.repository.UserRepository;
 import com.hostel.complaintsystem.security.JwtAuthenticationFilter;
-import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -28,11 +28,20 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
-@RequiredArgsConstructor
 public class SecurityConfig {
 
+    // @Lazy breaks the cycle:
+    //   SecurityConfig -> JwtAuthenticationFilter -> UserDetailsService (bean in SecurityConfig)
+    // With @Lazy the filter is created only when the security filter chain is first used,
+    // at which point all beans are already initialized.
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final UserRepository userRepository;
+
+    public SecurityConfig(@Lazy JwtAuthenticationFilter jwtAuthFilter,
+                          UserRepository userRepository) {
+        this.jwtAuthFilter  = jwtAuthFilter;
+        this.userRepository = userRepository;
+    }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
