@@ -65,6 +65,7 @@ allure-results/
 
 # Jenkins
 .jenkins/
+jenkins/jenkins_home/
 
 # Ansible
 *.retry

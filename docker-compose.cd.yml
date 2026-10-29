@@ -1,0 +1,21 @@
+# docker-compose.cd.yml  — CD override
+# Used by the Jenkins CD Deploy stage to redeploy using a registry-pulled
+# image rather than building from source.
+#
+# Usage (Jenkins pipeline):
+#   docker compose -p hostel-task12-dev \
+#     -f docker-compose.yml \
+#     -f docker-compose.cd.yml \
+#     up --detach --pull always --wait
+#
+# The BACKEND_IMAGE and FRONTEND_IMAGE env vars must be set before calling this.
+# Example: localhost:5000/hostelcms/hostel-complaint-system-backend:1.0.0-42
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE}
+    build: !reset null        # disable build — use registry image only
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    build: !reset null        # disable build — use registry image only

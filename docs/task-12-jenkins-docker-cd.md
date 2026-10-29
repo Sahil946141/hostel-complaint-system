@@ -1,81 +1,56 @@
-# Task 12 — Jenkins + Docker CD Pipeline
+# Task 12 — Jenkins and Docker Continuous Deployment
 
-## What This Task Adds
+## Pipeline
 
-Extends the Jenkins pipeline (Task 7) to:
-1. Build a **versioned** Docker image (`v1.0.<BUILD_NUMBER>`)
-2. Push to **Docker Hub** registry
-3. Deploy a **fresh container** automatically after tests pass
+The root `Jenkinsfile` builds and tests the Spring Boot backend and React frontend, deploys an isolated Compose stack for the Selenium gate, builds and tags both Docker images, pushes them to a local Docker Registry v2, then recreates the stack from the pushed tags.
 
-## Versioning Strategy
+The Docker stages only run after the backend/frontend build and enabled Selenium suite succeed. `SKIP_SELENIUM` defaults to `false`; leave it disabled for the acceptance build.
 
-```
-hostelcms/hostel-complaint-system:v1.0.5   ← build number
-hostelcms/hostel-complaint-system:latest   ← always latest
-```
+The pipeline uses:
 
-## Docker Hub Registry
+| Parameter | Default | Purpose |
+| --- | --- | --- |
+| `DEPLOY_ENVIRONMENT` | `dev` | Isolated test/deployment stack; also supports `staging` |
+| `LOCAL_REGISTRY` | `localhost:5000` | Registry endpoint; no Docker Hub account or Jenkins password is required |
+| `IMAGE_VERSION` | `1.0.0` | Semantic version; the build number is appended as a unique tag |
+| `SKIP_SELENIUM` | `false` | Optional emergency bypass; not used for acceptance verification |
 
-- Registry: `docker.io`
-- Repository: `hostelcms/hostel-complaint-system`
-- Tags: `v1.0.<BUILD_NUMBER>`, `latest`
+For example, build `#3` publishes:
 
-## Pipeline Extension (added to Jenkinsfile)
+- `localhost:5000/hostelcms/hostel-complaint-system-backend:1.0.0-3`
+- `localhost:5000/hostelcms/hostel-complaint-system-frontend:1.0.0-3`
+- Corresponding `:latest` tags
 
-```groovy
-environment {
-    VERSION = "v1.0.${BUILD_NUMBER}"
-    IMAGE   = "hostelcms/hostel-complaint-system"
-}
+The registry container is named `hostel-task12-registry`; its data persists in the `hostel-task12-registry-data` volume. Published images can be queried at `http://localhost:5000/v2/_catalog`.
 
-stage('Docker Build & Tag') {
-    steps {
-        bat "docker build -t ${IMAGE}:${VERSION} ./backend"
-        bat "docker tag ${IMAGE}:${VERSION} ${IMAGE}:latest"
-        echo "Built image: ${IMAGE}:${VERSION}"
-    }
-}
+## Isolated deployment ports
 
-stage('Docker Push to Hub') {
-    steps {
-        withCredentials([usernamePassword(
-            credentialsId: 'docker-hub-credentials',
-            usernameVariable: 'USER',
-            passwordVariable: 'PASS'
-        )]) {
-            bat "docker login -u %USER% -p %PASS%"
-            bat "docker push ${IMAGE}:${VERSION}"
-            bat "docker push ${IMAGE}:latest"
-        }
-        echo "Pushed: ${IMAGE}:${VERSION}"
-    }
-}
+| Environment | Frontend / Nginx | Backend API | PostgreSQL |
+| --- | --- | --- | --- |
+| `dev` | `http://localhost:3100/` | `localhost:8180` | `localhost:55432` |
+| `staging` | `http://localhost:3101/` | `localhost:8181` | `localhost:55433` |
 
-stage('Deploy Fresh Container') {
-    steps {
-        bat "docker rm -f hostel-backend || echo No container"
-        bat "docker run -d --name hostel-backend -p 8080:8080 ${IMAGE}:${VERSION}"
-        bat "docker ps"
-        echo "Deployed version: ${VERSION}"
-    }
-}
+The Task 12 Compose project is named `hostel-task12-<environment>` to avoid replacing other local application containers.
+
+## Deliverables and evidence
+
+- Backend runtime image: [`backend/Dockerfile`](../backend/Dockerfile)
+- Nginx frontend runtime image: [`frontend/Dockerfile`](../frontend/Dockerfile)
+- Build/test stack: [`docker-compose.yml`](../docker-compose.yml)
+- Registry-image deployment override: [`docker-compose.cd.yml`](../docker-compose.cd.yml)
+- Pipeline SCM source: `feature/task-12-jenkins-docker-cd`, script path `Jenkinsfile`
+- Jenkins build: [Task 12 pipeline history](http://localhost:9090/jenkins/job/hostel-complaint-system-pipeline/)
+
+On a successful build, Jenkins archives `docker-command-log.txt`, `docker-image-details.txt`, and `docker-container-status.txt` together with the application artifacts. The Console Output records the live build, push/pull commands, smoke-test responses, and stage results.
+
+## Local commands
+
+```powershell
+docker image ls --digests
+docker image inspect localhost:5000/hostelcms/hostel-complaint-system-backend:1.0.0-<BUILD_NUMBER>
+docker container ls --filter "label=com.docker.compose.project=hostel-task12-dev"
+curl.exe --fail http://localhost:5000/v2/_catalog
+curl.exe --fail http://localhost:3100/api/auth/health
 ```
 
-## End-to-End Commit-to-Container Flow
-
-```
-git push origin dev
-       ↓ (Jenkins webhook fires)
-Jenkins Job #5
-       ↓
-Checkout → Build → Test (Selenium) → Package
-       ↓ (only if all pass)
-docker build -t hostelcms/hostel-complaint-system:v1.0.5 .
-       ↓
-docker push → Docker Hub → hostelcms/hostel-complaint-system:v1.0.5
-       ↓
-docker rm -f hostel-backend
-docker run -d hostelcms/hostel-complaint-system:v1.0.5
-       ↓
-App live at http://localhost:8080  ✅
-```
+Keep Jenkins credentials and `jenkins/jenkins_home/` out of source control. The local registry is intended for same-machine development/demo deployments; use an authenticated TLS registry for a remote production deployment.
