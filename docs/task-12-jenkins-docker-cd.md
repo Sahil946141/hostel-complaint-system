@@ -17,6 +17,8 @@ The pipeline uses:
 
 The Jenkins test deployment enables deterministic student/admin test accounts through `APP_TEST_FIXTURES_ENABLED`. The Compose default is disabled, so normal deployments do not create these accounts.
 
+The pipeline uses Maven installed under the Jenkins home (`$JENKINS_HOME/tools/apache-maven-3.9.6`) so it works when the Windows Jenkins service runs as `LocalSystem`, whose user profile differs from the interactive user's.
+
 The Selenium suite uses Selenium 4.52.0 with the installed Chrome/ChromeDriver. Its complaint-form test updates React-controlled fields through native DOM value setters and bubbling input/change events, then submits with the form's native `requestSubmit` method. This keeps the test focused on React state, form validation, API submission, and persisted results without relying on headless keyboard injection.
 
 For example, a successful build `#<BUILD_NUMBER>` publishes:
@@ -43,7 +45,7 @@ The Task 12 Compose project is named `hostel-task12-<environment>` to avoid repl
 - Build/test stack: [`docker-compose.yml`](../docker-compose.yml)
 - Registry-image deployment override: [`docker-compose.cd.yml`](../docker-compose.cd.yml)
 - Pipeline SCM source: `feature/task-12-jenkins-docker-cd`, script path `Jenkinsfile`
-- Jenkins build: [Task 12 pipeline history](http://localhost:9090/jenkins/job/hostel-complaint-system-pipeline/)
+- Jenkins build: [Task 12 pipeline history](http://localhost:8081/job/hostel-complaint-system-pipeline/)
 
 On a successful build, Jenkins archives `docker-command-log.txt`, `docker-image-details.txt`, and `docker-container-status.txt` together with the application artifacts. The Console Output records the live build, push/pull commands, smoke-test responses, and stage results.
 

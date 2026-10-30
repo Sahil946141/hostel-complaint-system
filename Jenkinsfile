@@ -60,7 +60,7 @@ pipeline {
     }
 
     environment {
-        MAVEN_CMD    = "${env.USERPROFILE}\\.jenkins-tools\\apache-maven-3.9.6\\bin\\mvn.cmd"
+        MAVEN_CMD    = "${env.JENKINS_HOME}\\tools\\apache-maven-3.9.6\\bin\\mvn.cmd"
         VITE_API_URL = '/api'
 
         // Versioned image names, published to the local Registry v2 instance.
